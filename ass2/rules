@@ -1,0 +1,178 @@
+#!/usr/bin/python3
+# COMP3311 21T3 Ass2 ... print list of rules for a program or stream
+
+import sys
+import psycopg2
+import re
+from helpers import getProgram, getStream
+
+# define any local helper functions here
+def academic_reuirements(t):
+  if t[2] == 'DS':
+    print(f"{t[3]} stream(s) from {t[5]}")
+    list0 = t[6].split(",")
+    for item in list0:
+      print(f"- {item} ", end = '')
+      qrl2 = "select * from streams where code = %s"
+      cursor.execute(qrl2, [item])
+      result = cursor.fetchall()
+      if len(result) == 1:
+        print(result[0][2])
+      else:
+        print("???")
+  elif t[2] == 'CC':
+    list1 = t[6].split(",")
+    if len(list1) == 1:
+      print(t[5])
+    else:
+      print(f"all courses from {t[5]}")
+    for item1 in list1:
+      qrl3 = "select * from subjects a where a.code = %s"
+      if item1[0] == '{':
+        item1 = item1.strip('{')
+        item1 = item1.strip('}')
+        list2 = item1.split(";")
+        print(f"- {list2[0]} ", end = "")
+        cursor.execute(qrl3, [list2[0]])
+        print(cursor.fetchall()[0][2])
+        print(f"  or {list2[1]} ", end = "")
+        cursor.execute(qrl3, [list2[1]])
+        result = cursor.fetchall()
+        if len(result) == 1:
+          print(result[0][2])
+        else:
+          print("???")
+      else:  
+        print(f"- {item1} ", end = "")
+        cursor.execute(qrl3, [item1])
+        result = cursor.fetchall()
+        if len(result) == 1:
+          print(result[0][2])
+        else:
+          print("???")
+  elif t[2] == 'PE':
+    if t[7] == 'pattern':
+      if t[3] is None:
+        print(f"up to {t[4]} UOC courses from {t[5]}")
+        print(f"- courses matching {t[6]}")
+      elif t[4] is None:
+        print(f"at least {t[3]} UOC courses from {t[5]}")
+        print(f"- courses matching {t[6]}")
+      elif t[3] == t[4]:
+        print(f"{t[3]} UOC courses from {t[5]}")
+        print(f"- courses matching {t[6]}")
+      else:
+        print(f"between {t[3]} and {t[4]} UOC courses from {t[5]}")
+        print(f"- courses matching {t[6]}")
+    elif t[7] == 'enumerated':
+      if t[3] is None:
+        print(f"up to {t[4]} UOC courses from {t[5]}")
+      elif t[4] is None:
+        print(f"at least {t[3]} UOC courses from {t[5]}")
+      elif t[3] == t[4]:
+        print(f"{t[3]} UOC courses from {t[5]}")
+      else:
+        print(f"between {t[3]} and {t[4]} UOC courses from {t[5]}")
+      list2 = t[6].split(",")
+      for item1 in list2:
+        qrl3 = "select * from subjects a where a.code = %s"
+        if item1[0] == '{':
+          item1 = item1.strip('{')
+          item1 = item1.strip('}')
+          list2 = item1.split(";")
+          print(f"- {list2[0]} ", end = "")
+          cursor.execute(qrl3, [list2[0]])
+          print(cursor.fetchall()[0][2])
+          print(f"  or {list2[1]} ", end = "")
+          cursor.execute(qrl3, [list2[1]])
+          result = cursor.fetchall()
+          if len(result) == 1:
+            print(result[0][2])
+          else:
+            print("???")
+        else:  
+          print(f"- {item1} ", end = "")
+          cursor.execute(qrl3, [item1])
+          result = cursor.fetchall()
+          if len(result) == 1:
+            print(result[0][2])
+          else:
+            print("???")
+  elif t[2] == 'FE':
+    if t[3] is None:
+        print(f"up to {t[4]} UOC of Free Electives")
+    elif t[4] is None:
+      print(f"at least {t[3]} UOC of Free Electives")
+    elif t[3] == t[4]:
+      print(f"{t[3]} UOC of Free Electives")
+    else:
+      print(f"between {t[3]} and {t[4]} UOC of Free Electives")
+  elif t[2] == 'GE':
+    print(f"{t[3]} UOC of General Education")
+### set up some globals
+
+usage = f"Usage: {sys.argv[0]} (ProgramCode|StreamCode)"
+db = None
+
+### process command-line args
+
+argc = len(sys.argv)
+if argc < 2:
+  print(usage)
+  exit(1)
+code = sys.argv[1]
+if len(code) == 4:
+  codeOf = "program"
+elif len(code) == 6:
+  codeOf = "stream"
+
+try:
+  db = psycopg2.connect("dbname=mymyunsw")
+  if codeOf == "program":
+    progInfo = getProgram(db,code)
+    if not progInfo:
+      print(f"Invalid program code {code}")
+      exit()
+    #print(progInfo)  #debug
+    # List the rules for Program
+
+    # ... add your code here ...
+    cursor = db.cursor()
+    qrl0 = "select * from programs a join orgunits b on (a.offeredby = b.id) where a.code = %s"
+    cursor.execute(qrl0, [code])
+    for tuple in cursor.fetchall():
+      total_year = round(tuple[6] / 12,1)
+      print(f"{tuple[1]} {tuple[2]}, {tuple[3]} UOC, {total_year} years")
+      print(f"- offered by {tuple[11]}")
+      print("Academic Requirements:")
+      qrl1 = "select a.code, c.name, c.type, c.min_req, c.max_req, d.name, d.definition, d.defby from programs a join program_rules b on (a.id = b.program) join rules c on (b.rule = c.id) join academic_object_groups d on (c.ao_group = d.id) where a.code = %s"
+      cursor.execute(qrl1, [code])
+      for t in cursor.fetchall():
+        academic_reuirements(t)
+
+  elif codeOf == "stream":
+    strmInfo = getStream(db,code)
+    if not strmInfo:
+      print(f"Invalid stream code {code}")
+      exit()
+    #print(strmInfo)  #debug
+    # List the rules for Stream
+    # ... add your code here ...
+    cursor = db.cursor()
+    qrl0 = "select * from streams a join orgunits b on (a.offeredby = b.id) where a.code = %s"
+    cursor.execute(qrl0, [code])
+    for tuple in cursor.fetchall():
+      print(f"{code} {tuple[2]}")
+      print(f"- offered by {tuple[9]}")
+      print("Academic Requirements:")
+      qrl1 = "select a.code, c.name, c.type, c.min_req, c.max_req, d.name, d.definition, d.defby from streams a join stream_rules b on (a.id = b.stream) join rules c on (b.rule = c.id) join academic_object_groups d on (c.ao_group = d.id) where a.code = %s"
+      cursor.execute(qrl1, [code])
+      for t in cursor.fetchall():
+        academic_reuirements(t)
+
+except Exception as err:
+  print(err)
+finally:
+  if db:
+    db.close()
+

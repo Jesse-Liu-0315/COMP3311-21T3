@@ -1,0 +1,105 @@
+#!/usr/bin/python3
+# COMP3311 21T3 Ass2 ... print a transcript for a given student
+
+import sys
+import psycopg2
+import re
+from helpers import getStudent
+
+# define any local helper functions here
+
+### set up some globals
+
+usage = f"Usage: {sys.argv[0]} zID"
+db = None
+
+### process command-line args
+
+argc = len(sys.argv)
+if argc < 2:
+  print(usage)
+  exit(1)
+zid = sys.argv[1]
+if zid[0] == 'z':
+  zid = zid[1:8]
+digits = re.compile("^\d{7}$")
+if not digits.match(zid):
+  print(f"Invalid student ID {zid}")
+  exit(1)
+
+# manipulate database
+
+try:
+  db = psycopg2.connect("dbname=mymyunsw")
+  stuInfo = getStudent(db,zid)
+  if not stuInfo:
+    print(f"Invalid student ID {zid}")
+    exit()
+
+  #print(stuInfo) # debug
+  # Print transcript for Student
+  # ... add your code here ...
+  cursor = db.cursor()
+  qrl = "select a.id, a.family, a.given from people a join students b on (a.id = b.id) where a.id = %s"
+  cursor.execute(qrl, [zid])
+  for tuple in cursor.fetchall():
+    print(f"{zid} {tuple[1]}, {tuple[2]}")
+  qrl_course = "select * from course_enrolments a join courses b on (a.course = b.id) join subjects c on (b.subject = c.id) join terms d on (b.term = d.id) where student = %s order by d.id, c.code "
+  cursor.execute(qrl_course, [zid])
+  total_uoc = 0
+  total_wam = 0
+  total_wam_uoc = 0
+  #print(f"{tuple[9]} {tuple[19]} {tuple[10]:<32s}{tuple[2]:>3} {tuple[3]:2s} {tuple[12]:2d}uoc")
+  #total_wam += tuple[12] * tuple[2]
+  #total_uoc += tuple[12]
+  for tuple in cursor.fetchall():
+    flag = 0
+    print(f"{tuple[9]} {tuple[19]} {tuple[10]:<32s}", end = '')
+    if isinstance(tuple[2], int):
+      print(f"{tuple[2]:>3} ", end = '')
+    else:
+      print(f"{'-':>3} ", end = '')
+      flag = 1
+    print(f"{tuple[3]:2s} ", end = '')
+    if (tuple[3] == 'A+' or tuple[3] == 'A' or tuple[3] == 'A-' or 
+    tuple[3] == 'B+' or tuple[3] == 'B' or tuple[3] == 'B-' or
+    tuple[3] == 'C+' or tuple[3] == 'C' or tuple[3] == 'C-' or
+    tuple[3] == 'D+' or tuple[3] == 'D' or tuple[3] == 'D-' or
+    tuple[3] == 'XE' or tuple[3] == 'T' or tuple[3] == 'SY' or
+    tuple[3] == 'EC' or tuple[3] == 'RC' or tuple[3] == 'NC'): 
+      print(f" {tuple[12]:2d}uoc")
+      total_uoc += tuple[12]
+      total_wam_uoc = total_wam_uoc
+      total_wam = total_wam
+    elif (tuple[3] == 'AF' or tuple[3] == 'FL' or tuple[3] == 'UF' or
+    tuple[3] == 'E' or tuple[3] == 'F'):
+      print("  fail")
+      total_uoc = total_uoc
+      total_wam_uoc += tuple[12]
+      if flag == 0:
+        total_wam += tuple[12] * tuple[2]
+    elif (tuple[3] == 'AS' or tuple[3] == 'AW' or tuple[3] == 'NA' or
+    tuple[3] == 'PW' or tuple[3] == 'RD' or tuple[3] == 'NF' or
+    tuple[3] == 'LE' or tuple[3] == 'PE' or tuple[3] == 'WD' or 
+    tuple[3] == 'WJ' or tuple[3] is None):
+      print("")
+      total_uoc = total_uoc
+      total_wam_uoc = total_wam_uoc
+      total_wam = total_wam
+    else:
+      if flag == 0:
+        print(f" {tuple[12]:2d}uoc")
+        total_uoc += tuple[12]
+        total_wam_uoc += tuple[12]
+        total_wam += tuple[12] * tuple[2]
+  total_wam = total_wam / total_wam_uoc
+  total_wam = round(total_wam, 1)
+  print(f"UOC = {total_uoc}, WAM = {total_wam}")
+  
+
+except Exception as err:
+  print("DB error: ", err)
+finally:
+  if db:
+    db.close()
+

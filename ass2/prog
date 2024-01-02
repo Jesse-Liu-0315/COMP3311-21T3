@@ -1,0 +1,342 @@
+#!/usr/bin/python3
+# COMP3311 21T3 Ass2 ... progression check for a given student
+
+import sys
+import psycopg2
+import re
+from helpers import getStudent, getProgram, getStream
+
+# define any local helper functions here
+def towards(qrl_result, subject_code, complete_courese, first_attempt):
+  number_sign_flag= 0
+  for tuple1 in qrl_result:
+    if first_attempt == 0:
+      complete_courese[tuple1[5]] = []
+    flag_definition = 0
+    for letter in tuple1[6]:
+      if letter == ",":
+        flag_definition = 1
+    if flag_definition == 1:
+      list1 = tuple1[6].split(",")
+    else:
+      list1 = [tuple1[6]]
+    for item1 in list1:
+      if item1[0] == '{':
+        item1 = item1.strip('{')
+        item1 = item1.strip('}')
+        list2 = item1.split(";")
+        list1.append(list2[0])
+        list1.append(list2[1])
+      else:
+        if item1[5] == '#':
+          if item1 == 'FREE####':
+            return 'Free Electives', 1
+          item1 = item1.strip('#')
+          if item1 in subject_code:
+            #print(f" {tuple1[5]}")
+            return tuple1[5], 1
+        if subject_code == item1:
+          #print(f" {tuple1[5]}")
+          return tuple1[5], number_sign_flag
+  return False, number_sign_flag
+
+def grades(tuple):
+  total_uoc = 0
+  if (tuple[3] == 'A+' or tuple[3] == 'A' or tuple[3] == 'A-' or 
+  tuple[3] == 'B+' or tuple[3] == 'B' or tuple[3] == 'B-' or
+  tuple[3] == 'C+' or tuple[3] == 'C' or tuple[3] == 'C-' or
+  tuple[3] == 'D+' or tuple[3] == 'D' or tuple[3] == 'D-' or
+  tuple[3] == 'XE' or tuple[3] == 'T' or tuple[3] == 'SY' or
+  tuple[3] == 'EC' or tuple[3] == 'RC' or tuple[3] == 'NC'): 
+    return tuple[12]
+  elif (tuple[3] == 'AF' or tuple[3] == 'FL' or tuple[3] == 'UF' or
+  tuple[3] == 'E' or tuple[3] == 'F'):
+    return 0
+  elif (tuple[3] == 'AS' or tuple[3] == 'AW' or tuple[3] == 'NA' or
+  tuple[3] == 'PW' or tuple[3] == 'RD' or tuple[3] == 'NF' or
+  tuple[3] == 'LE' or tuple[3] == 'PE' or tuple[3] == 'WD' or 
+  tuple[3] == 'WJ' or tuple[3] is None):
+    return 0
+  else:
+    return tuple[12]
+
+def append_in_dict(complete_courese, subject_code, result):
+  if result in complete_courese:
+    complete_courese[result].append(subject_code)
+    #print(complete_courese)
+  else:
+    list_course = [subject_code]
+    complete_courese[result] = list_course
+
+def check_satis(complete_courese, result, subject_code):
+  qrl6 = 'select max_req from rules where name = %s'
+  cursor.execute(qrl6, [result])
+  result_max = cursor.fetchall()
+  max = result_max[0][0]
+  if max == None:
+    return True
+  sum_uoc = 0
+  qrl7 = 'select uoc from subjects where code = %s'
+  cursor.execute(qrl7, [subject_code])
+  uoc_result_present = cursor.fetchall()
+  sum_uoc += uoc_result_present[0][0]
+  if result not in complete_courese:
+    complete_courese[result] = []
+  for each_course in complete_courese[result]:
+    qrl7 = 'select uoc from subjects where code = %s'
+    cursor.execute(qrl7, [each_course])
+    uoc_result = cursor.fetchall()
+    sum_uoc += uoc_result[0][0]
+  if sum_uoc > max:
+    return False
+  else:
+    return True
+
+usage = f"Usage: {sys.argv[0]} zID [Program Stream]"
+db = None
+
+### process command-line args
+
+argc = len(sys.argv)
+if argc < 2:
+  print(usage)
+  exit(1)
+zid = sys.argv[1]
+if zid[0] == 'z':
+  zid = zid[1:8]
+digits = re.compile("^\d{7}$")
+if not digits.match(zid):
+  print("Invalid student ID")
+  exit(1)
+
+progCode = None
+strmCode = None
+
+if argc == 4:
+  progCode = sys.argv[2]
+  strmCode = sys.argv[3]
+
+# manipulate database
+
+try:
+  db = psycopg2.connect("dbname=mymyunsw")
+  stuInfo = getStudent(db,zid)
+  #print(stuInfo) # debug
+  if not stuInfo:
+    print(f"Invalid student id {zid}")
+    exit()
+
+  if progCode:
+    progInfo = getProgram(db,progCode)
+    if not progInfo:
+      print(f"Invalid program code {progCode}")
+      exit()
+    #print(progInfo)  #debug
+
+  if strmCode:
+    strmInfo = getStream(db,strmCode)
+    if not strmInfo:
+      print(f"Invalid program code {strmCode}")
+      exit()
+    #print(strmInfo)  #debug
+
+  # if have a program/stream
+  #   show progression check on supplied program/stream
+  # else
+  #   show progression check on most recent program/stream enrolment
+  # ... add your code here ...
+  cursor = db.cursor()
+  qrl0 = "select * from people a where a.id = %s"
+  cursor.execute(qrl0, [zid])
+  result = cursor.fetchall()
+  print(f"{zid} {result[0][1]}, {result[0][2]}")
+  if progCode and strmCode:
+    qrl1 = "select * from programs where id = %s"
+    cursor.execute(qrl1, [progCode])
+    result = cursor.fetchall()
+    print(f"  {progCode} {result[0][2]}")
+    qrl2 = "select * from streams where code = %s"
+    cursor.execute(qrl2, [strmCode])
+    result = cursor.fetchall()
+    print(f"  {strmCode} {result[0][2]}")
+  elif progCode is None and strmCode:
+    qrl1 = "select * from program_enrolments a join programs b on (a.program = b.id) where a.student = %s order by a.term desc limit 1"
+    cursor.execute(qrl1, [zid])
+    result = cursor.fetchall()
+    print(f"  {result[0][3]} {result[0][10]}")
+    progCode = result[0][3]
+    qrl2 = "select * from streams where code = %s"
+    cursor.execute(qrl2, [strmCode])
+    result = cursor.fetchall()
+    print(f"  {strmCode} {result[0][2]}")
+  elif progCode and strmCode is None:
+    qrl1 = "select * from programs where id = %s"
+    cursor.execute(qrl1, [progCode])
+    result = cursor.fetchall()
+    print(f"  {progCode} {result[0][2]}")
+    qrl2 = "select * from program_enrolments a join stream_enrolments b on (a.id = b.partof) join streams c on (b.stream = c.id) where a.student = %s order by a.term desc limit 1"
+    cursor.execute(qrl2, [zid])
+    result = cursor.fetchall()
+    print(f"  {result[0][11]} {result[0][12]}")
+    strmCode = result[0][11]
+  else:
+    qrl1 = "select * from program_enrolments a join programs b on (a.program = b.id) where a.student = %s order by a.term desc limit 1"
+    cursor.execute(qrl1, [zid])
+    result = cursor.fetchall()
+    print(f"  {result[0][3]} {result[0][10]}")
+    progCode = result[0][3]
+    qrl2 = "select * from program_enrolments a join stream_enrolments b on (a.id = b.partof) join streams c on (b.stream = c.id) where a.student = %s order by a.term desc limit 1"
+    cursor.execute(qrl2, [zid])
+    result = cursor.fetchall()
+    print(f"  {result[0][11]} {result[0][12]}")
+    strmCode = result[0][11]
+  complete_courese = {}
+  print("")
+  print("Completed:")
+  qrl3 = "select * from course_enrolments a join courses b on (a.course = b.id) join subjects c on (b.subject = c.id) join terms d on (b.term = d.id) where a.student = %s order by d.id, c.code"
+  cursor.execute(qrl3, [zid])
+  total_uoc = 0
+  first_attempt = 0
+  for tuple in cursor.fetchall():
+    # print(tuple)
+    subject_code = tuple[9]
+    #flag = 0
+    print(f"{tuple[9]} {tuple[19]} {tuple[10]:<32s}", end = '')
+    if isinstance(tuple[2], int):
+      print(f"{tuple[2]:>3} ", end = '')
+    else:
+      print(f"{'-':>3} ", end = '')
+      #flag = 1
+    print(f"{tuple[3]:2s} ", end = '')
+    qrl4 = "select a.code, a.name, c.type, d.type, d.defby, d.name, d.definition from streams a join stream_rules b on (a.id = b.stream) join rules c on (b.rule = c.id) join academic_object_groups d on (c.ao_group = d.id) where a.code = %s order by case c.type when 'CC' then 1 when 'PE' then 2 when 'FE' then 3 when 'GE' then 4 end"
+    cursor.execute(qrl4, [strmCode])
+    stream_result, number_sign_flag1 = towards(cursor.fetchall(), subject_code, complete_courese, first_attempt)
+    qrl5 = "select a.id, a.name, c.type, d.type, d.defby, d.name, d.definition from programs a join program_rules b on (a.id = b.program) join rules c on (b.rule = c.id) join academic_object_groups d on (c.ao_group = d.id) where a.id = %s order by case c.type when 'CC' then 1 when 'PE' then 2 when 'FE' then 3 when 'GE' then 4 end"
+    cursor.execute(qrl5, [progCode])
+    program_result, number_sign_flag2 = towards(cursor.fetchall(), subject_code, complete_courese, first_attempt)
+    first_attempt = 1
+    #print(stream_result, number_sign_flag1)
+    #print(program_result, number_sign_flag2)
+    course_grade = grades(tuple)
+    if course_grade == 0:
+      print(" fail does not count")
+    elif stream_result != False and program_result != False and number_sign_flag1 == 0 and number_sign_flag2 == 0:
+      print(f" {course_grade:2d}uoc towards ", end = '')
+      print(f"{stream_result} + {program_result}")
+      append_in_dict(complete_courese, subject_code, stream_result)
+    elif stream_result != False or program_result != False:
+      #print(f"{course_grade:2d}uoc towards ", end = '')
+      #total_uoc += course_grade
+      if stream_result != False and program_result == False:
+        #
+        if check_satis(complete_courese, stream_result, subject_code):
+          total_uoc += course_grade
+          print(f" {course_grade:2d}uoc towards ", end = '')
+          print(stream_result)
+          append_in_dict(complete_courese, subject_code, stream_result)
+        else:
+          print(" 0uoc does not satisfy any rule")
+      elif stream_result == False and program_result != False:
+        #
+        if check_satis(complete_courese, program_result, subject_code):
+          total_uoc += course_grade
+          print(f" {course_grade:2d}uoc towards ", end = '')
+          print(program_result)
+          append_in_dict(complete_courese, subject_code, program_result)
+        else:
+          print(" 0uoc does not satisfy any rule")
+      elif number_sign_flag1 == 1:
+        if check_satis(complete_courese, program_result, subject_code):
+          total_uoc += course_grade
+          print(f" {course_grade:2d}uoc towards ", end = '')
+          print(program_result)
+          append_in_dict(complete_courese, subject_code, program_result)
+        elif check_satis(complete_courese, stream_result, subject_code):
+          total_uoc += course_grade
+          print(f" {course_grade:2d}uoc towards ", end = '')
+          print(stream_result)
+          append_in_dict(complete_courese, subject_code, stream_result)
+        else:
+          print(" 0uoc does not satisfy any rule")
+      else:
+        if check_satis(complete_courese, stream_result, subject_code):
+          total_uoc += course_grade
+          print(f" {course_grade:2d}uoc towards ", end = '')
+          print(stream_result)
+          append_in_dict(complete_courese, subject_code, stream_result)
+        elif check_satis(complete_courese, program_result, subject_code):
+          total_uoc += course_grade
+          print(f" {course_grade:2d}uoc towards ", end = '')
+          print(program_result)
+          append_in_dict(complete_courese, subject_code, program_result)
+        else:
+          print(" 0uoc does not satisfy any rule")
+    else :
+      print(" 0uoc does not satisfy any rule")
+  print(f"UOC = {total_uoc} so far")
+  print("")
+  print("")
+  qrl6 = 'select uoc from programs where id = %s'
+  cursor.execute(qrl6, [progCode])
+  graduate_uoc = cursor.fetchall()[0][0]
+  if total_uoc >= graduate_uoc:
+    print("Eligible to graduate")
+  else:
+    print("Remaining to complete degree:")
+    #print(complete_courese)
+    list_tmp = []
+    for key in complete_courese:
+      qrl9 = 'select * from rules a where a.name = %s'
+      cursor.execute(qrl9, [key])
+      list_tmp.append(cursor.fetchall()[0][0])
+    list_tmp.sort()
+    complete_courese_new = {}
+    for item in list_tmp:
+      qrl10 = 'select * from rules a where a.id = %s'
+      cursor.execute(qrl10, [item])
+      rule_name = cursor.fetchall()[0][1]
+      complete_courese_new[rule_name] = complete_courese[rule_name]
+    #print(complete_courese_new)
+    #print(complete_courese)
+    for key in complete_courese:
+      qrl7 = 'select * from rules a join academic_object_groups b on (a.ao_group = b.id) where a.name = %s'
+      cursor.execute(qrl7, [key])
+      for tuple in cursor.fetchall():
+        #print(tuple)
+        if tuple[2] == 'CC':
+          list_rule = tuple[11].split(",")
+          for item in complete_courese[key]:
+            for item1 in list_rule:
+              if item in item1:
+                list_rule.remove(item1)
+          #print(list_rule)
+          for item2 in list_rule:
+            if item2[0] == '{':
+              item2 = item2.strip('{')
+              item2 = item2.strip('}')
+              list_split = item2.split(";")
+              qrl8 = 'select * from subjects where code = %s'
+              cursor.execute(qrl8, [list_split[0]])
+              remin_course = cursor.fetchall()
+              if remin_course is not None:
+                print(f"- {list_split[0]} {remin_course[0][2]}")
+              cursor.execute(qrl8, [list_split[1]])
+              remin_course = cursor.fetchall()
+              if remin_course is not None:
+                print(f"  or {list_split[1]} {remin_course[0][2]}")
+            else:
+              qrl8 = 'select * from subjects where code = %s'
+              cursor.execute(qrl8, [item2])
+              remin_course = cursor.fetchall()
+              if remin_course is not None:
+                print(f"- {item2} {remin_course[0][2]}")
+        """elif:
+          tuple[2] == 'PE':"""
+
+
+except Exception as err:
+  print("DB error: ", err)
+finally:
+  if db:
+    db.close()
+
